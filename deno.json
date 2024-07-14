@@ -1,0 +1,14 @@
+{
+	"fmt": {
+		"useTabs": true,
+		"indentWidth": 4,
+		"proseWrap": "never",
+		"lineWidth": 140
+	},
+	"name": "@nktkas/levana-perps-utils",
+	"version": "0.1.0",
+	"exports": "./index.ts",
+	"imports": {
+		"decimal.js": "npm:decimal.js@^10.4.3"
+	}
+}
