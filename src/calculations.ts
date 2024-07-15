@@ -437,7 +437,6 @@ export function calculatePositionStats(args: {
         maxLeverage: args.maxLeverage,
         marketType: args.marketType,
         priceBase: args.priceBase,
-        allowNegative: false,
     });
 
     const { tradingFee, borrowFee } = calculateFees({
@@ -540,7 +539,6 @@ export function calculateLiquidationPrice(args: {
         maxLeverage: args.maxLeverage,
         marketType: args.marketType,
         priceBase: args.priceBase,
-        allowNegative: false,
     });
 
     const secondsInAYear = 365 * 24 * 60 * 60;
@@ -627,7 +625,6 @@ export function calculateMinimumCounterCollateral(args: {
     marketType: "collateral_is_quote" | "collateral_is_base";
     priceBase: string;
     maxLeverage: string;
-    allowNegative: boolean;
 }): string {
     const notionalSize = calculateNotionalSize({
         direction: args.direction,
@@ -636,17 +633,12 @@ export function calculateMinimumCounterCollateral(args: {
         marketType: args.marketType,
         priceBase: args.priceBase,
     });
-    if (args.allowNegative) {
-        // A comparable value resembling +Inf
-        return "1000000000000000";
-    } else {
-        const collateral = notionalToCollateral({
-            marketType: args.marketType,
-            notional: Decimal.abs(notionalSize).toString(),
-            priceBase: args.priceBase,
-        });
-        return new Decimal(collateral).div(args.maxLeverage).toString();
-    }
+    const collateral = notionalToCollateral({
+        marketType: args.marketType,
+        notional: Decimal.abs(notionalSize).toString(),
+        priceBase: args.priceBase,
+    });
+    return new Decimal(collateral).div(args.maxLeverage).toString();
 }
 
 export function calculateCounterCollateral(args: {
@@ -657,7 +649,6 @@ export function calculateCounterCollateral(args: {
     maxLeverage: string;
     marketType: "collateral_is_quote" | "collateral_is_base";
     priceBase: string;
-    allowNegative: boolean;
 }): {
     counterCollateral: string;
     /** see calculateMinimumCounterCollateral() for details on this value */
@@ -679,7 +670,6 @@ export function calculateCounterCollateral(args: {
         marketType: args.marketType,
         priceBase: args.priceBase,
         maxLeverage: args.maxLeverage,
-        allowNegative: args.allowNegative,
     });
 
     let counterCollateral: string;
@@ -731,7 +721,7 @@ export function calculateTakeProfitPrice(args: {
     takeProfitPriceChange: string;
 } {
     const direction = directionToNumber(args.direction);
-    const maxGains = new Decimal(args.maxGainsPercentage).div(100).toString();
+    const maxGains = new Decimal(args.maxGainsPercentage).div("100").toString();
     const takeProfitPriceChange = new Decimal(direction)
         .times(maxGains)
         .div(args.leverage)
@@ -843,13 +833,15 @@ export function calculateMaxGains(args: {
     return new Decimal(maxGains).times("100").toString();
 }
 
+/**
+ * @returns percentage
+ */
 export function calculateMaxGainsFromDependencies(args: {
     direction: "long" | "short";
     collateral: string;
     leverage: string;
     marketType: "collateral_is_quote" | "collateral_is_base";
     priceBase: string;
-    allowNegative: boolean;
     takeProfitPrice: string;
     maxLeverage: string;
 }): string {
@@ -868,7 +860,6 @@ export function calculateMaxGainsFromDependencies(args: {
         maxLeverage: args.maxLeverage,
         marketType: args.marketType,
         priceBase: args.priceBase,
-        allowNegative: args.allowNegative,
     });
     return calculateMaxGains({
         activeCollateral: args.collateral,
@@ -1213,7 +1204,6 @@ export function calculateUnlockedLiquidity(args: {
         leverage: args.leverage,
         marketType: args.marketType,
         priceBase: args.priceBase,
-        allowNegative: false,
         takeProfitPrice: args.takeProfitPrice,
         maxLeverage: args.maxLeverage,
     });
@@ -1251,7 +1241,6 @@ export function calculateUnlockedLiquidity(args: {
         maxLeverage: args.maxLeverage,
         marketType: args.marketType,
         priceBase: args.priceBase,
-        allowNegative: false,
     });
 
     const counterCollateral = notionalToCollateral({
