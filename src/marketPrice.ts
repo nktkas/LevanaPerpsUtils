@@ -1,4 +1,4 @@
-import { Decimal } from "decimal.js";
+import { Decimal } from "npm:decimal.js@^10.4.3";
 
 export function priceNotionalInCollateral(args: {
     marketType: "collateral_is_quote" | "collateral_is_base";
