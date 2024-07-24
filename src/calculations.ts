@@ -523,7 +523,7 @@ export function calculateLiquidationPrice(args: {
     priceBase: string;
     takeProfitPrice: string;
     maxLeverage: string;
-}) {
+}): string {
     const notionalSize = calculateNotionalSize({
         direction: args.direction,
         collateral: args.collateral,
@@ -1031,7 +1031,7 @@ export function calculateDnfCapOutOfBalance(args: {
     marketType: "collateral_is_quote" | "collateral_is_base";
     priceBase: string;
     oldNotional?: string;
-}) {
+}): { collateral: string } {
     const newNotional = calculateNotionalSize({
         direction: args.direction,
         collateral: args.collateral,

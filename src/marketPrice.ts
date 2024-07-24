@@ -129,7 +129,7 @@ export function baseToCollateral(args: {
     marketType: "collateral_is_quote" | "collateral_is_base";
     base: string;
     priceBase: string;
-}) {
+}): string {
     if (args.marketType === "collateral_is_base") {
         return args.base;
     } else {
