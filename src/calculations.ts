@@ -1,4 +1,4 @@
-import { Decimal } from "npm:decimal.js@^10.4.3";
+import { BigNumber } from "bignumber.js";
 import {
     collateralToBase,
     collateralToNotional,
@@ -7,6 +7,8 @@ import {
     priceNotionalInCollateral,
     usdToCollateral,
 } from "./marketPrice.ts";
+
+BigNumber.config({ DECIMAL_PLACES: 18, ROUNDING_MODE: BigNumber.ROUND_DOWN });
 
 export function calculateDnfDetails(args: {
     oldNotional: string;
@@ -29,42 +31,43 @@ export function calculateDnfDetails(args: {
         netNotional: string;
         deltaNotional: string;
     }): string {
-        const notionalLowCap = new Decimal(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
-        const notionalHighCap = new Decimal(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
+        const notionalLowCap = new BigNumber(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
+        const notionalHighCap = new BigNumber(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
 
-        const deltaNotionalAtLowCap = Decimal.min(
-            new Decimal(args.netNotional).plus(args.deltaNotional),
+        const deltaNotionalAtLowCap = BigNumber.min(
+            new BigNumber(args.netNotional).plus(args.deltaNotional),
             notionalLowCap,
-        ).minus(Decimal.min(args.netNotional, notionalLowCap));
-        const deltaNotionalAtHighCap = Decimal.max(
-            new Decimal(args.netNotional).plus(args.deltaNotional),
+        ).minus(BigNumber.min(args.netNotional, notionalLowCap));
+        const deltaNotionalAtHighCap = BigNumber.max(
+            new BigNumber(args.netNotional).plus(args.deltaNotional),
             notionalHighCap,
-        ).minus(Decimal.max(args.netNotional, notionalHighCap));
-        const deltaNotionalUncapped = new Decimal(args.deltaNotional)
+        ).minus(BigNumber.max(args.netNotional, notionalHighCap));
+        const deltaNotionalUncapped = new BigNumber(args.deltaNotional)
             .minus(deltaNotionalAtLowCap)
             .minus(deltaNotionalAtHighCap)
             .toFixed();
 
-        const deltaNotionalFeeLow = new Decimal(deltaNotionalAtLowCap).times(new Decimal(args.deltaNeutralityFeeCap).negated()).toFixed();
-        const deltaNotionalFeeHigh = new Decimal(deltaNotionalAtHighCap).times(args.deltaNeutralityFeeCap).toFixed();
-        const deltaNotionalFeeUncapped = new Decimal(deltaNotionalUncapped)
+        const deltaNotionalFeeLow = new BigNumber(deltaNotionalAtLowCap).times(new BigNumber(args.deltaNeutralityFeeCap).negated())
+            .toFixed();
+        const deltaNotionalFeeHigh = new BigNumber(deltaNotionalAtHighCap).times(args.deltaNeutralityFeeCap).toFixed();
+        const deltaNotionalFeeUncapped = new BigNumber(deltaNotionalUncapped)
             .times(deltaNotionalUncapped)
             .plus(
-                new Decimal("2")
+                new BigNumber("2")
                     .times(deltaNotionalUncapped)
-                    .times(Decimal.max(Decimal.min(args.netNotional, notionalHighCap), notionalLowCap)),
+                    .times(BigNumber.max(BigNumber.min(args.netNotional, notionalHighCap), notionalLowCap)),
             )
-            .div(new Decimal(args.deltaNeutralityFeeSensitivity).times("2"))
+            .div(new BigNumber(args.deltaNeutralityFeeSensitivity).times("2"))
             .toFixed();
 
-        return new Decimal(deltaNotionalFeeLow)
+        return new BigNumber(deltaNotionalFeeLow)
             .plus(deltaNotionalFeeHigh)
             .plus(deltaNotionalFeeUncapped)
             .toFixed();
     }
 
     function calcInner(deltaNotional: string): string {
-        const feeFund = new Decimal(deltaNeutralityFeeFund).plus(fees).toFixed();
+        const feeFund = new BigNumber(deltaNeutralityFeeFund).plus(fees).toFixed();
 
         const feeInNotional = calculateDNF({
             deltaNeutralityFeeCap: args.deltaNeutralityFeeCap,
@@ -79,30 +82,32 @@ export function calculateDnfDetails(args: {
         });
 
         let fee: string = feeInCollateral;
-        if (new Decimal(feeInCollateral).lessThan("0")) {
-            const feeToBalanceInNotional = Decimal.abs(
+        if (new BigNumber(feeInCollateral).lt("0")) {
+            const feeToBalanceInNotional = new BigNumber(
                 calculateDNF({
                     deltaNeutralityFeeCap: args.deltaNeutralityFeeCap,
                     deltaNeutralityFeeSensitivity: args.deltaNeutralityFeeSensitivity,
                     netNotional,
-                    deltaNotional: new Decimal(netNotional).negated().toFixed(),
+                    deltaNotional: new BigNumber(netNotional).negated().toFixed(),
                 }),
-            ).toFixed();
+            )
+                .abs()
+                .toFixed();
             const feeToBalanceInCollateral = notionalToCollateral({
                 marketType: args.marketType,
                 notional: feeToBalanceInNotional,
                 priceBase: args.priceBase,
             });
 
-            const fundednessRatio = Decimal.abs(feeToBalanceInCollateral).lessThan(1e-6)
+            const fundednessRatio = new BigNumber(feeToBalanceInCollateral).abs().lt(1e-6)
                 ? "1"
-                : new Decimal(feeFund).div(feeToBalanceInCollateral).toFixed();
+                : new BigNumber(feeFund).div(feeToBalanceInCollateral).toFixed();
 
-            fee = new Decimal(feeInCollateral).times(Decimal.min(fundednessRatio, "1")).toFixed();
+            fee = new BigNumber(feeInCollateral).times(BigNumber.min(fundednessRatio, "1")).toFixed();
         }
 
-        netNotional = new Decimal(netNotional).plus(deltaNotional).toFixed();
-        fees = new Decimal(fees).minus(fee).toFixed();
+        netNotional = new BigNumber(netNotional).plus(deltaNotional).toFixed();
+        fees = new BigNumber(fees).minus(fee).toFixed();
 
         return fees;
     }
@@ -111,30 +116,30 @@ export function calculateDnfDetails(args: {
     let deltaNeutralityFeeFund: string = args.deltaNeutralityFeeFund;
     let fees: string = "0";
 
-    const deltaNotional = new Decimal(args.newNotional).minus(args.oldNotional).toFixed();
-    const netNotionalAfter = new Decimal(netNotional).plus(deltaNotional).toFixed();
+    const deltaNotional = new BigNumber(args.newNotional).minus(args.oldNotional).toFixed();
+    const netNotionalAfter = new BigNumber(netNotional).plus(deltaNotional).toFixed();
 
     let amount: string;
-    if (new Decimal(netNotional).times(netNotionalAfter).lessThan("0")) {
-        const deltaNotionalSecondCalc = new Decimal(deltaNotional).plus(netNotional).toFixed();
-        const part1 = calcInner(new Decimal(netNotional).negated().toFixed());
+    if (new BigNumber(netNotional).times(netNotionalAfter).lt("0")) {
+        const deltaNotionalSecondCalc = new BigNumber(deltaNotional).plus(netNotional).toFixed();
+        const part1 = calcInner(new BigNumber(netNotional).negated().toFixed());
         const part2 = calcInner(deltaNotionalSecondCalc);
-        amount = new Decimal(part1).plus(part2).toFixed();
+        amount = new BigNumber(part1).plus(part2).toFixed();
     } else {
         amount = calcInner(deltaNotional);
     }
 
-    if (new Decimal(amount).greaterThan("0")) {
-        deltaNeutralityFeeFund = new Decimal(deltaNeutralityFeeFund)
+    if (new BigNumber(amount).gt("0")) {
+        deltaNeutralityFeeFund = new BigNumber(deltaNeutralityFeeFund)
             .plus(
-                new Decimal(amount)
+                new BigNumber(amount)
                     .times(
-                        new Decimal("1").minus(args.deltaNeutralityFeeTax),
+                        new BigNumber("1").minus(args.deltaNeutralityFeeTax),
                     ),
             )
             .toFixed();
     } else {
-        deltaNeutralityFeeFund = new Decimal(deltaNeutralityFeeFund).plus(amount).toFixed();
+        deltaNeutralityFeeFund = new BigNumber(deltaNeutralityFeeFund).plus(amount).toFixed();
     }
 
     return {
@@ -207,7 +212,7 @@ export function calculateDeltaNeutralityTax(args: {
     });
     return {
         dnfOnOpen: detailsOnOpen.amount,
-        tax: new Decimal(detailsOnOpen.amount).plus(detailsOnClose.amount).toFixed(),
+        tax: new BigNumber(detailsOnOpen.amount).plus(detailsOnClose.amount).toFixed(),
     };
 }
 
@@ -221,12 +226,12 @@ export function calculatePriceBaseDNFImpacted(args: {
 }): string {
     const priceNotional = priceNotionalInCollateral({ marketType: args.marketType, priceBase: args.priceBase });
     const collateral = usdToCollateral({ usd: args.dnf, priceUsd: args.priceUsd });
-    const feeRate = new Decimal(collateral).div(new Decimal(args.newNotional).minus(args.oldNotional)).toFixed();
-    const impactedPriceNotional = new Decimal(priceNotional).times(new Decimal("1").plus(feeRate)).toFixed();
+    const feeRate = new BigNumber(collateral).div(new BigNumber(args.newNotional).minus(args.oldNotional)).toFixed();
+    const impactedPriceNotional = new BigNumber(priceNotional).times(new BigNumber("1").plus(feeRate)).toFixed();
 
     let impactedPriceBase: string;
     if (args.marketType === "collateral_is_base") {
-        impactedPriceBase = new Decimal("1").div(impactedPriceNotional).toFixed();
+        impactedPriceBase = new BigNumber("1").div(impactedPriceNotional).toFixed();
     } else {
         impactedPriceBase = impactedPriceNotional;
     }
@@ -287,18 +292,18 @@ export function calculateFees(args: {
 } {
     const oldNotionalInCollateral = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(args.oldNotional).toFixed(),
+        notional: new BigNumber(args.oldNotional).abs().toFixed(),
         priceBase: args.priceBase,
     });
     const newNotionalInCollateral = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(args.newNotional).toFixed(),
+        notional: new BigNumber(args.newNotional).abs().toFixed(),
         priceBase: args.priceBase,
     });
 
     let tradingFeeNotional: string;
-    if (new Decimal(newNotionalInCollateral).greaterThan(oldNotionalInCollateral)) {
-        tradingFeeNotional = new Decimal(newNotionalInCollateral)
+    if (new BigNumber(newNotionalInCollateral).gt(oldNotionalInCollateral)) {
+        tradingFeeNotional = new BigNumber(newNotionalInCollateral)
             .minus(oldNotionalInCollateral)
             .times(args.tradingFeeNotionalRate)
             .toFixed();
@@ -307,8 +312,8 @@ export function calculateFees(args: {
     }
 
     let tradingFeeCounterCollateral: string;
-    if (new Decimal(args.newCounterCollateral).greaterThan(args.oldCounterCollateral)) {
-        tradingFeeCounterCollateral = new Decimal(args.newCounterCollateral)
+    if (new BigNumber(args.newCounterCollateral).gt(args.oldCounterCollateral)) {
+        tradingFeeCounterCollateral = new BigNumber(args.newCounterCollateral)
             .minus(args.oldCounterCollateral)
             .times(args.counterSideCollateralFeeRate)
             .toFixed();
@@ -317,12 +322,12 @@ export function calculateFees(args: {
     }
 
     const tradingFee = collateralToUsd({
-        collateral: new Decimal(tradingFeeNotional).plus(tradingFeeCounterCollateral).toFixed(),
+        collateral: new BigNumber(tradingFeeNotional).plus(tradingFeeCounterCollateral).toFixed(),
         priceUsd: args.priceUsd,
     });
 
     const borrowFee = collateralToUsd({
-        collateral: Decimal
+        collateral: BigNumber
             .max(args.newCounterCollateral, args.newMinCounterCollateral)
             .times(args.borrowFee)
             .div(365 * 24)
@@ -341,8 +346,8 @@ export function calculateDeferredExecutionCrankFee(args: {
     crankFeeSurcharge: string;
     crankFeeCharged: string;
 }): string {
-    return new Decimal((args.deferredExecutionItems + 5) / 10)
-        .floor()
+    return new BigNumber((args.deferredExecutionItems + 5) / 10)
+        .integerValue(BigNumber.ROUND_FLOOR)
         .times(args.crankFeeSurcharge)
         .plus(args.crankFeeCharged)
         .toFixed();
@@ -360,16 +365,16 @@ export function calculateNotionalSize(args: {
     if (args.marketType === "collateral_is_quote") {
         return collateralToNotional({
             marketType: args.marketType,
-            collateral: new Decimal(args.collateral)
+            collateral: new BigNumber(args.collateral)
                 .times(args.leverage)
                 .times(direction)
                 .toFixed(),
             priceBase: args.priceBase,
         });
     } else {
-        const notionalSizeCollateral = new Decimal(args.collateral)
+        const notionalSizeCollateral = new BigNumber(args.collateral)
             .times(
-                new Decimal(direction)
+                new BigNumber(direction)
                     .negated()
                     .times(args.leverage)
                     .plus(1),
@@ -542,9 +547,9 @@ export function calculateLiquidationPrice(args: {
     });
 
     const secondsInAYear = 365 * 24 * 60 * 60;
-    const liquifundingDelayYears = new Decimal(args.liquifundingDelaySeconds).div(secondsInAYear).toFixed();
-    const borrowFeeMargin = new Decimal(args.collateral)
-        .plus(Decimal.max(counterCollateral, minCounterCollateral))
+    const liquifundingDelayYears = new BigNumber(args.liquifundingDelaySeconds).div(secondsInAYear).toFixed();
+    const borrowFeeMargin = new BigNumber(args.collateral)
+        .plus(BigNumber.max(counterCollateral, minCounterCollateral))
         .times(args.borrowFeeRateCap)
         .times(liquifundingDelayYears)
         .toFixed();
@@ -554,21 +559,21 @@ export function calculateLiquidationPrice(args: {
         priceBase: args.priceBase,
     });
     const maxPrice = args.direction === "long"
-        ? new Decimal(calculatedPriceNotionalInCollateral)
-            .plus(new Decimal(args.collateral).div(Decimal.abs(notionalSize)))
+        ? new BigNumber(calculatedPriceNotionalInCollateral)
+            .plus(new BigNumber(args.collateral).div(new BigNumber(notionalSize).abs()))
             .toFixed()
-        : new Decimal(calculatedPriceNotionalInCollateral)
-            .plus(new Decimal(args.collateral).div(Decimal.abs(notionalSize)))
+        : new BigNumber(calculatedPriceNotionalInCollateral)
+            .plus(new BigNumber(args.collateral).div(new BigNumber(notionalSize).abs()))
             .toFixed();
 
-    const fundingFeeMargin = new Decimal(notionalSize)
+    const fundingFeeMargin = new BigNumber(notionalSize)
         .abs()
         .times(maxPrice)
         .times(args.fundingFeeRateCap)
         .times(liquifundingDelayYears)
         .toFixed();
 
-    const deltaNeutralityFeeMargin = new Decimal(notionalSize)
+    const deltaNeutralityFeeMargin = new BigNumber(notionalSize)
         .abs()
         .times(maxPrice)
         .times(args.deltaNeutralityFeeCap)
@@ -581,11 +586,11 @@ export function calculateLiquidationPrice(args: {
 
     const exposureMargin = notionalToCollateral({
         marketType: args.marketType,
-        notional: new Decimal(notionalSize).abs().times(args.exposureMarginRatio).toFixed(),
+        notional: new BigNumber(notionalSize).abs().times(args.exposureMarginRatio).toFixed(),
         priceBase: args.priceBase,
     });
 
-    const margin = new Decimal(borrowFeeMargin)
+    const margin = new BigNumber(borrowFeeMargin)
         .plus(fundingFeeMargin)
         .plus(deltaNeutralityFeeMargin)
         .plus(crankFeeMargin)
@@ -593,13 +598,13 @@ export function calculateLiquidationPrice(args: {
         .toFixed();
 
     const feesInCollateral = usdToCollateral({
-        usd: new Decimal(args.tradingFee).plus(args.deltaNeutralityFeeAsset).toFixed(),
+        usd: new BigNumber(args.tradingFee).plus(args.deltaNeutralityFeeAsset).toFixed(),
         priceUsd: args.priceBase,
     });
 
-    const liquidationPriceNotional = new Decimal(calculatedPriceNotionalInCollateral)
+    const liquidationPriceNotional = new BigNumber(calculatedPriceNotionalInCollateral)
         .minus(
-            new Decimal(args.collateral)
+            new BigNumber(args.collateral)
                 .minus(feesInCollateral)
                 .minus(margin)
                 .div(notionalSize),
@@ -607,7 +612,7 @@ export function calculateLiquidationPrice(args: {
         .toFixed();
 
     if (args.marketType === "collateral_is_base") {
-        return new Decimal("1").div(liquidationPriceNotional).toFixed();
+        return new BigNumber("1").div(liquidationPriceNotional).toFixed();
     } else {
         return liquidationPriceNotional;
     }
@@ -635,10 +640,10 @@ export function calculateMinimumCounterCollateral(args: {
     });
     const collateral = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(notionalSize).toFixed(),
+        notional: new BigNumber(notionalSize).abs().toFixed(),
         priceBase: args.priceBase,
     });
-    return new Decimal(collateral).div(args.maxLeverage).toFixed();
+    return new BigNumber(collateral).div(args.maxLeverage).toFixed();
 }
 
 export function calculateCounterCollateral(args: {
@@ -678,19 +683,19 @@ export function calculateCounterCollateral(args: {
             marketType: args.marketType,
             priceBase: args.priceBase,
         });
-        counterCollateral = new Decimal(args.takeProfitPrice)
+        counterCollateral = new BigNumber(args.takeProfitPrice)
             .minus(calculatedPriceNotionalInCollateral)
             .times(notionalSize)
             .toFixed();
     } else {
         let takeProfitPriceNotional: string;
-        if (new Decimal(args.takeProfitPrice).lessThan(epsilon)) {
+        if (new BigNumber(args.takeProfitPrice).lt(epsilon)) {
             takeProfitPriceNotional = "Infinity";
         } else {
             if (args.takeProfitPrice === "Infinity") {
                 takeProfitPriceNotional = "0";
             } else {
-                takeProfitPriceNotional = new Decimal("1").div(args.takeProfitPrice).toFixed();
+                takeProfitPriceNotional = new BigNumber("1").div(args.takeProfitPrice).toFixed();
             }
         }
 
@@ -698,7 +703,7 @@ export function calculateCounterCollateral(args: {
             marketType: args.marketType,
             priceBase: args.priceBase,
         });
-        counterCollateral = new Decimal(takeProfitPriceNotional)
+        counterCollateral = new BigNumber(takeProfitPriceNotional)
             .minus(calculatedPriceNotionalInCollateral)
             .times(notionalSize)
             .toFixed();
@@ -721,8 +726,8 @@ export function calculateTakeProfitPrice(args: {
     takeProfitPriceChange: string;
 } {
     const direction = directionToNumber(args.direction);
-    const maxGains = new Decimal(args.maxGainsPercentage).div("100").toFixed();
-    const takeProfitPriceChange = new Decimal(direction)
+    const maxGains = new BigNumber(args.maxGainsPercentage).div("100").toFixed();
+    const takeProfitPriceChange = new BigNumber(direction)
         .times(maxGains)
         .div(args.leverage)
         .toFixed();
@@ -732,11 +737,11 @@ export function calculateTakeProfitPrice(args: {
         priceBase: args.priceBase,
     });
     const takeProfitPrice = args.marketType === "collateral_is_quote"
-        ? new Decimal(takeProfitPriceChange)
+        ? new BigNumber(takeProfitPriceChange)
             .plus(1)
             .times(calculatedPriceNotionalInCollateral)
             .toFixed()
-        : new Decimal(takeProfitPriceChange)
+        : new BigNumber(takeProfitPriceChange)
             .plus(1)
             .div(calculatedPriceNotionalInCollateral)
             .toFixed();
@@ -771,7 +776,7 @@ export function calculateTakeProfitPriceRange(args: {
     }).takeProfitPrice;
 
     return {
-        min: args.addPadding ? new Decimal(args.priceBase).times(args.direction === "long" ? 1.001 : 0.999).toFixed() : args.priceBase,
+        min: args.addPadding ? new BigNumber(args.priceBase).times(args.direction === "long" ? 1.001 : 0.999).toFixed() : args.priceBase,
         max: takeProfitForMaxMaxGains,
     };
 }
@@ -784,7 +789,7 @@ export function calculatePositionSize(args: {
 }): string {
     return collateralToBase({
         marketType: args.marketType,
-        collateral: new Decimal(args.collateral).times(args.leverage).abs().toFixed(),
+        collateral: new BigNumber(args.collateral).times(args.leverage).abs().toFixed(),
         priceBase: args.priceBase,
     });
 }
@@ -802,35 +807,35 @@ export function calculateMaxGains(args: {
     let maxGains: string;
 
     if (args.marketType === "collateral_is_quote") {
-        maxGains = new Decimal(args.counterCollateral).div(args.activeCollateral).toFixed();
+        maxGains = new BigNumber(args.counterCollateral).div(args.activeCollateral).toFixed();
     } else {
-        const takeProfitCollateral = new Decimal(args.activeCollateral).plus(args.counterCollateral).toFixed();
+        const takeProfitCollateral = new BigNumber(args.activeCollateral).plus(args.counterCollateral).toFixed();
         const calculatedPriceNotionalInCollateral = priceNotionalInCollateral({
             marketType: args.marketType,
             priceBase: args.priceBase,
         });
-        const takeProfitPrice = new Decimal(calculatedPriceNotionalInCollateral)
-            .plus(new Decimal(args.counterCollateral).div(args.notionalSize))
+        const takeProfitPrice = new BigNumber(calculatedPriceNotionalInCollateral)
+            .plus(new BigNumber(args.counterCollateral).div(args.notionalSize))
             .toFixed();
         const epsilon = 1e-7;
 
-        if (new Decimal(takeProfitPrice).lessThan(epsilon)) {
+        if (new BigNumber(takeProfitPrice).lt(epsilon)) {
             maxGains = "Infinity";
         }
 
-        const takeProfitInNotional = new Decimal(takeProfitCollateral).div(takeProfitPrice).toFixed();
+        const takeProfitInNotional = new BigNumber(takeProfitCollateral).div(takeProfitPrice).toFixed();
         const activeCollateralInNotional = collateralToNotional({
             marketType: args.marketType,
             collateral: args.activeCollateral,
             priceBase: args.priceBase,
         });
-        maxGains = new Decimal(takeProfitInNotional)
+        maxGains = new BigNumber(takeProfitInNotional)
             .minus(activeCollateralInNotional)
             .div(activeCollateralInNotional)
             .toFixed();
     }
 
-    return new Decimal(maxGains).times("100").toFixed();
+    return new BigNumber(maxGains).times("100").toFixed();
 }
 
 /**
@@ -899,30 +904,30 @@ export function calculateMaxGainsRange(args: {
 
     if (args.marketType === "collateral_is_quote") {
         const maxMaxGains = args.direction === "short"
-            ? new Decimal(args.leverage).times("100").floor().times(counterSideRatio).toFixed()
-            : new Decimal(args.leverage).times("100").floor().times(buffer).toFixed();
+            ? new BigNumber(args.leverage).times("100").integerValue(BigNumber.ROUND_FLOOR).times(counterSideRatio).toFixed()
+            : new BigNumber(args.leverage).times("100").integerValue(BigNumber.ROUND_FLOOR).times(buffer).toFixed();
 
         return {
-            min: new Decimal(args.leverage).div(args.maxLeverage).times("100").ceil().toFixed(),
+            min: new BigNumber(args.leverage).div(args.maxLeverage).times("100").integerValue(BigNumber.ROUND_CEIL).toFixed(),
             max: maxMaxGains,
             end: undefined,
         };
     } else {
-        const maxGainsSliderMin = new Decimal("-1")
-            .div(new Decimal("1").minus(new Decimal(direction).times(args.maxLeverage)))
+        const maxGainsSliderMin = new BigNumber("-1")
+            .div(new BigNumber("1").minus(new BigNumber(direction).times(args.maxLeverage)))
             .times(args.leverage)
             .times(args.direction)
             .times("100")
-            .ceil()
+            .integerValue(BigNumber.ROUND_CEIL)
             .toFixed();
 
         if (args.direction === "long") {
-            const maxGainsSliderOneBeforeMax = new Decimal("-1")
-                .div(new Decimal("1").minus(new Decimal(direction).div(counterSideRatio)))
+            const maxGainsSliderOneBeforeMax = new BigNumber("-1")
+                .div(new BigNumber("1").minus(new BigNumber(direction).div(counterSideRatio)))
                 .times(args.leverage)
                 .times(args.direction)
                 .times("100")
-                .floor()
+                .integerValue(BigNumber.ROUND_FLOOR)
                 .toFixed();
 
             return {
@@ -932,11 +937,11 @@ export function calculateMaxGainsRange(args: {
             };
         } else {
             const takeProfitPriceChangeMax = -0.5;
-            const maxGainsSliderMax = new Decimal(takeProfitPriceChangeMax)
+            const maxGainsSliderMax = new BigNumber(takeProfitPriceChangeMax)
                 .times(args.leverage)
                 .times(args.direction)
                 .times("100")
-                .floor()
+                .integerValue(BigNumber.ROUND_FLOOR)
                 .toFixed();
 
             return {
@@ -961,21 +966,21 @@ export function calculateUpdateLeverage(args: {
 } {
     let newNotionalSize: string;
     if (args.marketType === "collateral_is_quote") {
-        newNotionalSize = new Decimal(args.notionalSize)
+        newNotionalSize = new BigNumber(args.notionalSize)
             .times(args.newLeverage)
             .div(args.leverage)
             .toFixed();
     } else {
         const direction = directionToNumber(args.direction);
-        newNotionalSize = new Decimal(args.notionalSize)
+        newNotionalSize = new BigNumber(args.notionalSize)
             .times(
-                new Decimal(args.newLeverage)
+                new BigNumber(args.newLeverage)
                     .times(-1)
                     .times(direction)
                     .plus(1),
             )
             .div(
-                new Decimal(args.leverage)
+                new BigNumber(args.leverage)
                     .times(-1)
                     .times(direction)
                     .plus(1),
@@ -983,7 +988,7 @@ export function calculateUpdateLeverage(args: {
             .toFixed();
     }
 
-    const newCounterCollateral = new Decimal(args.counterCollateral)
+    const newCounterCollateral = new BigNumber(args.counterCollateral)
         .times(newNotionalSize)
         .div(args.notionalSize)
         .toFixed();
@@ -1009,14 +1014,14 @@ export function calculateCollateralImpactLeverage(args: {
         notional: args.notionalSize,
         priceBase: args.priceBase,
     });
-    const newLeverageToNotional = new Decimal(collateral).div(args.newCollateral).toFixed();
+    const newLeverageToNotional = new BigNumber(collateral).div(args.newCollateral).toFixed();
 
     const newLeverage = args.marketType === "collateral_is_quote"
-        ? new Decimal(newLeverageToNotional).times(directionToNumber(args.direction)).toFixed()
-        : new Decimal(newLeverageToNotional).times(-1).plus(1).times(directionToNumber(args.direction)).toFixed();
+        ? new BigNumber(newLeverageToNotional).times(directionToNumber(args.direction)).toFixed()
+        : new BigNumber(newLeverageToNotional).times(-1).plus(1).times(directionToNumber(args.direction)).toFixed();
 
     return {
-        leverage: Decimal.abs(newLeverage).toFixed(),
+        leverage: new BigNumber(newLeverage).abs().toFixed(),
         leverageSigned: newLeverage,
     };
 }
@@ -1039,15 +1044,15 @@ export function calculateDnfCapOutOfBalance(args: {
         marketType: args.marketType,
         priceBase: args.priceBase,
     });
-    const deltaNotional = new Decimal(newNotional).minus(args.oldNotional ?? "0").toFixed();
+    const deltaNotional = new BigNumber(newNotional).minus(args.oldNotional ?? "0").toFixed();
 
-    const notionalLowCap = new Decimal(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
-    const notionalHighCap = new Decimal(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
-    if (new Decimal(args.netNotional).lessThan(notionalLowCap) && new Decimal(deltaNotional).lessThan("0")) {
+    const notionalLowCap = new BigNumber(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
+    const notionalHighCap = new BigNumber(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
+    if (new BigNumber(args.netNotional).lt(notionalLowCap) && new BigNumber(deltaNotional).lt("0")) {
         return { collateral: "0" };
     }
 
-    if (new Decimal(args.netNotional).greaterThan(notionalHighCap) && new Decimal(deltaNotional).greaterThan("0")) {
+    if (new BigNumber(args.netNotional).gt(notionalHighCap) && new BigNumber(deltaNotional).gt("0")) {
         return { collateral: "0" };
     }
 
@@ -1076,39 +1081,39 @@ export function calculateDnfCapWithinBalance(args: {
         marketType: args.marketType,
         priceBase: args.priceBase,
     });
-    const deltaNotional = new Decimal(newNotional).minus(args.oldNotional ?? "0").toFixed();
+    const deltaNotional = new BigNumber(newNotional).minus(args.oldNotional ?? "0").toFixed();
 
-    const notionalLowCap = new Decimal(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
-    const notionalHighCap = new Decimal(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
+    const notionalLowCap = new BigNumber(args.deltaNeutralityFeeCap).negated().times(args.deltaNeutralityFeeSensitivity).toFixed();
+    const notionalHighCap = new BigNumber(args.deltaNeutralityFeeCap).times(args.deltaNeutralityFeeSensitivity).toFixed();
 
     let maxDeltaNotional: string;
-    if (new Decimal(deltaNotional).lessThan("0")) {
-        maxDeltaNotional = new Decimal(notionalLowCap).minus(args.netNotional).toFixed();
+    if (new BigNumber(deltaNotional).lt("0")) {
+        maxDeltaNotional = new BigNumber(notionalLowCap).minus(args.netNotional).toFixed();
         if (maxDeltaNotional === "0") {
             return { collateral: "0", leverage: "0" };
         }
     } else {
-        maxDeltaNotional = new Decimal(notionalHighCap).minus(args.netNotional).toFixed();
+        maxDeltaNotional = new BigNumber(notionalHighCap).minus(args.netNotional).toFixed();
         if (maxDeltaNotional === "0") {
             return { collateral: "0", leverage: "0" };
         }
     }
 
-    const deltasRatio = new Decimal(deltaNotional).div(maxDeltaNotional).toFixed();
+    const deltasRatio = new BigNumber(deltaNotional).div(maxDeltaNotional).toFixed();
     const newCollateral = notionalToCollateral({
         marketType: args.marketType,
         notional: newNotional,
         priceBase: args.priceBase,
     });
-    const leverageToNotional = new Decimal(newCollateral).div(args.collateral).toFixed();
-    const maxLeverageToNotional = new Decimal(leverageToNotional).div(deltasRatio).toFixed();
+    const leverageToNotional = new BigNumber(newCollateral).div(args.collateral).toFixed();
+    const maxLeverageToNotional = new BigNumber(leverageToNotional).div(deltasRatio).toFixed();
 
     const maxLeverage = args.marketType === "collateral_is_quote"
-        ? Decimal.abs(maxLeverageToNotional).toFixed()
-        : new Decimal(direction).negated().times(maxLeverageToNotional).plus(direction).abs().toFixed();
+        ? new BigNumber(maxLeverageToNotional).abs().toFixed()
+        : new BigNumber(direction).negated().times(maxLeverageToNotional).plus(direction).abs().toFixed();
 
     return {
-        collateral: new Decimal(args.collateral).div(deltasRatio).toFixed(),
+        collateral: new BigNumber(args.collateral).div(deltasRatio).toFixed(),
         leverage: maxLeverage,
     };
 }
@@ -1122,12 +1127,12 @@ export function noLiquidityInDirection(args: {
 }): boolean {
     const netNotionalInCollateralAbs = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(args.netNotional).toFixed(),
+        notional: new BigNumber(args.netNotional).abs().toFixed(),
         priceBase: args.priceBase,
     });
-    const minUnlockedLiquidity = new Decimal(netNotionalInCollateralAbs).div(args.carryLeverage).toFixed();
-    const unlockedLiquidityUntilMin = Decimal.max(new Decimal(args.unlockedLiquidity).minus(minUnlockedLiquidity), "0").toFixed();
-    return new Decimal(unlockedLiquidityUntilMin).lessThanOrEqualTo("0");
+    const minUnlockedLiquidity = new BigNumber(netNotionalInCollateralAbs).div(args.carryLeverage).toFixed();
+    const unlockedLiquidityUntilMin = BigNumber.max(new BigNumber(args.unlockedLiquidity).minus(minUnlockedLiquidity), "0").toFixed();
+    return new BigNumber(unlockedLiquidityUntilMin).lte("0");
 }
 
 /**
@@ -1165,12 +1170,12 @@ export function calculateUnlockedLiquidity(args: {
         priceBase: args.priceBase,
     });
     const oldNotionalAmount = args.oldNotional ?? "0";
-    const deltaNotional = new Decimal(notionalSize).minus(oldNotionalAmount).toFixed();
+    const deltaNotional = new BigNumber(notionalSize).minus(oldNotionalAmount).toFixed();
 
     /**
      * net notional after position is opened
      */
-    const netNotional = new Decimal(args.netNotional).plus(deltaNotional).toFixed();
+    const netNotional = new BigNumber(args.netNotional).plus(deltaNotional).toFixed();
 
     /**
      * absolute value of the net notional after position is opened, in collateral
@@ -1178,7 +1183,7 @@ export function calculateUnlockedLiquidity(args: {
      */
     const netNotionalInCollateralAbs = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(netNotional).toFixed(),
+        notional: new BigNumber(netNotional).abs().toFixed(),
         priceBase: args.priceBase,
     });
 
@@ -1187,14 +1192,14 @@ export function calculateUnlockedLiquidity(args: {
      * using carryLeverage (not maximum possible counter leverage)
      * in other words, this is the actual counter-collateral amount needed to balance net-notional to zero
      */
-    const minUnlockedLiquidity = new Decimal(netNotionalInCollateralAbs).div(args.carryLeverage).toFixed();
+    const minUnlockedLiquidity = new BigNumber(netNotionalInCollateralAbs).div(args.carryLeverage).toFixed();
 
     /**
      * calculate how much liquidity is available to be used for this position
      * i.e. given the actual amount of available liquidity
      * make sure there's enough left over after we deduct the amount needed to balance net-notional to zero
      */
-    const unlockedLiquidityUntilMin = Decimal.max(new Decimal(args.unlockedLiquidity).minus(minUnlockedLiquidity), "0").toFixed();
+    const unlockedLiquidityUntilMin = BigNumber.max(new BigNumber(args.unlockedLiquidity).minus(minUnlockedLiquidity), "0").toFixed();
 
     const oldCounterCollateral = args.oldCounterCollateralProp ?? "0";
 
@@ -1210,7 +1215,7 @@ export function calculateUnlockedLiquidity(args: {
     /**
      * calculateCounterCollateral assumes that the take profit price is the max gains price
      */
-    const newMaxGainsAmount = new Decimal(newMaxGainsPercentage).div("100").toFixed();
+    const newMaxGainsAmount = new BigNumber(newMaxGainsPercentage).div("100").toFixed();
 
     const minMaxGainsPercentage = calculateMaxGainsRange({
         maxLeverage: args.maxLeverage,
@@ -1218,10 +1223,10 @@ export function calculateUnlockedLiquidity(args: {
         direction: args.direction,
         marketType: args.marketType,
     }).min;
-    const minMaxGains = new Decimal(minMaxGainsPercentage).div("100").toFixed();
+    const minMaxGains = new BigNumber(minMaxGainsPercentage).div("100").toFixed();
 
     let maxGainsPrice: string;
-    if (new Decimal(newMaxGainsAmount).greaterThan(minMaxGains)) {
+    if (new BigNumber(newMaxGainsAmount).gt(minMaxGains)) {
         maxGainsPrice = args.takeProfitPrice;
     } else {
         maxGainsPrice = calculateTakeProfitPrice({
@@ -1245,21 +1250,21 @@ export function calculateUnlockedLiquidity(args: {
 
     const counterCollateral = notionalToCollateral({
         marketType: args.marketType,
-        notional: Decimal.abs(notionalSize).toFixed(),
+        notional: new BigNumber(notionalSize).abs().toFixed(),
         priceBase: args.priceBase,
     });
     /**
      * now calculate the min counter-collateral the trader can lock up
      */
-    const minCounterCollateral = new Decimal(counterCollateral).div(args.maxLeverage).toFixed();
+    const minCounterCollateral = new BigNumber(counterCollateral).div(args.maxLeverage).toFixed();
 
     /**
      * how much new counter collateral your position will be locking
      * (i.e. new target counter collateral minus what was already in the position)
      */
-    const counterCollateralDelta = new Decimal(newCounterCollateral).minus(oldCounterCollateral).toFixed();
+    const counterCollateralDelta = new BigNumber(newCounterCollateral).minus(oldCounterCollateral).toFixed();
 
-    if (new Decimal(counterCollateralDelta).lessThanOrEqualTo("0")) {
+    if (new BigNumber(counterCollateralDelta).lte("0")) {
         return {
             newCounterCollateral,
             minUnlockedLiquidity,
@@ -1273,36 +1278,36 @@ export function calculateUnlockedLiquidity(args: {
     /**
      * just the delta between the old counter collateral and minimum counter collateral the trader can lock up
      */
-    const minCounterCollateralDelta = new Decimal(minCounterCollateral).minus(oldCounterCollateral).toFixed();
+    const minCounterCollateralDelta = new BigNumber(minCounterCollateral).minus(oldCounterCollateral).toFixed();
 
     /**
      * ratios between the delta and the maximum counter collateral available
      */
-    const deltasRatio = new Decimal(counterCollateralDelta).div(unlockedLiquidityUntilMin).toFixed();
+    const deltasRatio = new BigNumber(counterCollateralDelta).div(unlockedLiquidityUntilMin).toFixed();
 
     /**
      * TODO - the following may not ultimately be needed
      * we already know by here that the position is valid if deltasRatio is <= 1
      */
-    const minDeltasRatio = new Decimal(minCounterCollateralDelta).div(unlockedLiquidityUntilMin).toFixed();
+    const minDeltasRatio = new BigNumber(minCounterCollateralDelta).div(unlockedLiquidityUntilMin).toFixed();
 
-    const leverageToNotional = new Decimal(notionalToCollateral({
+    const leverageToNotional = new BigNumber(notionalToCollateral({
         marketType: args.marketType,
         notional: notionalSize,
         priceBase: args.priceBase,
     })).div(args.collateral).toFixed();
 
-    const maxLeverageToNotional = new Decimal(leverageToNotional).div(deltasRatio).toFixed();
+    const maxLeverageToNotional = new BigNumber(leverageToNotional).div(deltasRatio).toFixed();
 
     const maxLeveragePosition = args.marketType === "collateral_is_quote"
-        ? Decimal.abs(maxLeverageToNotional).toFixed()
-        : new Decimal(direction).negated().times(maxLeverageToNotional).plus(direction).abs().toFixed();
+        ? new BigNumber(maxLeverageToNotional).abs().toFixed()
+        : new BigNumber(direction).negated().times(maxLeverageToNotional).plus(direction).abs().toFixed();
 
     const maxMaxGains = calculateMaxGains({
         notionalSize,
         marketType: args.marketType,
         activeCollateral: args.collateral,
-        counterCollateral: new Decimal(unlockedLiquidityUntilMin).plus(oldCounterCollateral).toFixed(),
+        counterCollateral: new BigNumber(unlockedLiquidityUntilMin).plus(oldCounterCollateral).toFixed(),
         priceBase: args.priceBase,
     });
 
@@ -1314,10 +1319,10 @@ export function calculateUnlockedLiquidity(args: {
     return {
         newCounterCollateral,
         minUnlockedLiquidity,
-        collateral: new Decimal(args.collateral).div(deltasRatio).toFixed(),
-        collateralAtMinCounterCollateral: new Decimal(minCounterCollateralDelta).lessThanOrEqualTo("0")
+        collateral: new BigNumber(args.collateral).div(deltasRatio).toFixed(),
+        collateralAtMinCounterCollateral: new BigNumber(minCounterCollateralDelta).lte("0")
             ? "Infinity"
-            : new Decimal(args.collateral).div(minDeltasRatio).toFixed(),
+            : new BigNumber(args.collateral).div(minDeltasRatio).toFixed(),
         /** maximum valid leverage for your position */
         leverage: maxLeveragePosition,
         maxGains: maxMaxGains,
@@ -1344,14 +1349,14 @@ export function calculateTakeProfitFromCounterCollateral(args: {
         marketType: args.marketType,
         priceBase: args.priceBase,
     });
-    const takeProfitPrice = new Decimal(calculatedPriceNotionalInCollateral)
+    const takeProfitPrice = new BigNumber(calculatedPriceNotionalInCollateral)
         .plus(args.counterCollateral)
         .div(notionalSize)
         .toFixed();
 
     const epsilon = 1e-7;
 
-    if (new Decimal(takeProfitPrice).lessThan(epsilon)) {
+    if (new BigNumber(takeProfitPrice).lt(epsilon)) {
         if (args.marketType === "collateral_is_quote") {
             throw new Error("infinite max gains not allowed here");
         } else {
@@ -1361,7 +1366,7 @@ export function calculateTakeProfitFromCounterCollateral(args: {
         if (args.marketType === "collateral_is_quote") {
             return takeProfitPrice;
         } else {
-            return new Decimal("1").div(takeProfitPrice).toFixed();
+            return new BigNumber("1").div(takeProfitPrice).toFixed();
         }
     }
 }

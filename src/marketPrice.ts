@@ -1,4 +1,6 @@
-import { Decimal } from "npm:decimal.js@^10.4.3";
+import { BigNumber } from "bignumber.js";
+
+BigNumber.config({ DECIMAL_PLACES: 18, ROUNDING_MODE: BigNumber.ROUND_DOWN });
 
 export function priceNotionalInCollateral(args: {
     marketType: "collateral_is_quote" | "collateral_is_base";
@@ -49,21 +51,21 @@ export function priceNotionalInUsd(args: {
         quoteAssetId: args.quoteAssetId,
         priceUsd: args.priceUsd,
     });
-    return new Decimal("1").div(calculatedPriceUsdInNotional).toFixed();
+    return new BigNumber("1").div(calculatedPriceUsdInNotional).toFixed();
 }
 
 export function collateralToUsd(args: {
     collateral: string;
     priceUsd: string;
 }): string {
-    return new Decimal(args.collateral).times(args.priceUsd).toFixed();
+    return new BigNumber(args.collateral).times(args.priceUsd).toFixed();
 }
 
 export function usdToCollateral(args: {
     usd: string;
     priceUsd: string;
 }): string {
-    const collateral = new Decimal(args.usd).div(args.priceUsd).toFixed();
+    const collateral = new BigNumber(args.usd).div(args.priceUsd).toFixed();
     return collateral === "Infinity" ? args.usd : collateral;
 }
 
@@ -144,14 +146,14 @@ export function baseToQuote(args: {
     base: string;
     priceBase: string;
 }): string {
-    return new Decimal(args.base).times(args.priceBase).toFixed();
+    return new BigNumber(args.base).times(args.priceBase).toFixed();
 }
 
 export function quoteToBase(args: {
     quote: string;
     priceBase: string;
 }): string {
-    const base = new Decimal(args.quote).div(args.priceBase).toFixed();
+    const base = new BigNumber(args.quote).div(args.priceBase).toFixed();
     return base === "Infinity" ? args.quote : base;
 }
 
@@ -185,10 +187,10 @@ export function notionalToCollateral(args: {
     priceBase: string;
 }): string {
     if (args.marketType === "collateral_is_base") {
-        const collateral = new Decimal(args.notional).div(args.priceBase).toFixed();
+        const collateral = new BigNumber(args.notional).div(args.priceBase).toFixed();
         return collateral === "Infinity" ? args.notional : collateral;
     } else {
-        return new Decimal(args.notional).times(args.priceBase).toFixed();
+        return new BigNumber(args.notional).times(args.priceBase).toFixed();
     }
 }
 
@@ -198,9 +200,9 @@ export function collateralToNotional(args: {
     priceBase: string;
 }): string {
     if (args.marketType === "collateral_is_base") {
-        return new Decimal(args.collateral).times(args.priceBase).toFixed();
+        return new BigNumber(args.collateral).times(args.priceBase).toFixed();
     } else {
-        const notional = new Decimal(args.collateral).div(args.priceBase).toFixed();
+        const notional = new BigNumber(args.collateral).div(args.priceBase).toFixed();
         return notional === "Infinity" ? args.collateral : notional;
     }
 }
